@@ -393,6 +393,8 @@ let state = {
   booking:{ categoryId:null, date:"", time:null, role:"ogrenci", name:"", grade:"", phone:"", note:"", freeTimes:null, slotsLoading:false },
   lookupPhone:"",
   lookupResults:null,
+  editingBookingId:null,
+  editForm:{ date:"", time:null, freeTimes:null, loading:false },
   loading:true,
   loadError:null
 };
@@ -446,6 +448,20 @@ async function loadFreeTimesForDate(date){
   const allTimes = state.availability[wk] || [];
   if(allTimes.length===0) return [];
   const taken = await fetchBookedTimesForDate(date);
+  return allTimes.filter(t=>!taken.includes(t));
+}
+async function fetchBookedTimesForDateExcluding(date, excludeId){
+  try{
+    const { data, error } = await sb.rpc('get_booked_times_excluding', { p_date: date, p_exclude_id: excludeId });
+    if(error) throw error;
+    return (data||[]).map(r=>r.time_slot);
+  }catch(e){ console.error("Saatler alınamadı:", e); return []; }
+}
+async function loadFreeTimesForDateExcluding(date, excludeId){
+  const wk = weekdayKeyFromDate(date);
+  const allTimes = state.availability[wk] || [];
+  if(allTimes.length===0) return [];
+  const taken = await fetchBookedTimesForDateExcluding(date, excludeId);
   return allTimes.filter(t=>!taken.includes(t));
 }
 
@@ -746,17 +762,24 @@ function renderLookup(){
         const cat = catById(r.category_id);
         const canCancel = r.status!=='iptal' && daysUntil(r.date) >= 2;
         const tooLate = r.status!=='iptal' && daysUntil(r.date) < 2;
+        const isEditing = state.editingBookingId === r.id;
         return `
-        <div class="booking-row">
-          <div>
-            <strong>${cat?escapeHtml(cat.name):"Ders"}</strong>
-            <div class="meta">${formatDateTR(r.date)} · ${r.time_slot} · ${escapeHtml(r.name)}</div>
-            ${tooLate?'<div class="meta" style="color:var(--red);margin-top:4px;">Derse 2 günden az kaldığı için artık iptal edilemez.</div>':''}
+        <div class="booking-row" style="flex-direction:column;align-items:stretch;">
+          <div style="display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap;">
+            <div>
+              <strong>${cat?escapeHtml(cat.name):"Ders"}</strong>
+              <div class="meta">${formatDateTR(r.date)} · ${r.time_slot} · ${escapeHtml(r.name)}</div>
+              ${tooLate?'<div class="meta" style="color:var(--red);margin-top:4px;">Derse 2 günden az kaldığı için artık değişiklik/iptal yapılamaz.</div>':''}
+            </div>
+            <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px;">
+              <span class="status-pill status-${r.status}">${r.status==='beklemede'?'Beklemede':r.status==='onaylandı'?'Onaylandı':'İptal Edildi'}</span>
+              ${canCancel?`<div style="display:flex;gap:6px;">
+                <button class="icon-btn" data-action="start-edit-booking" data-id="${r.id}">Tarih/Saat Değiştir</button>
+                <button class="icon-btn cancel" data-action="cancel-own-booking" data-id="${r.id}">İptal Et</button>
+              </div>`:''}
+            </div>
           </div>
-          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px;">
-            <span class="status-pill status-${r.status}">${r.status==='beklemede'?'Beklemede':r.status==='onaylandı'?'Onaylandı':'İptal Edildi'}</span>
-            ${canCancel?`<button class="icon-btn cancel" data-action="cancel-own-booking" data-id="${r.id}">Randevuyu İptal Et</button>`:''}
-          </div>
+          ${isEditing ? renderRescheduleForm(r) : ''}
         </div>`;
       }).join("");
     }
@@ -779,6 +802,49 @@ function renderLookup(){
       </div>
     </section>
   `;
+}
+
+function renderRescheduleForm(r){
+  const ef = state.editForm;
+  return `
+    <div style="margin-top:14px;padding-top:14px;border-top:1px dashed var(--line);">
+      <div id="editMsg"></div>
+      <div class="field">
+        <label>Yeni Tarih</label>
+        <input type="date" id="editBookingDate" min="${addDaysISO(todayISO(),1)}" max="${maxDateISO()}" value="${ef.date}">
+      </div>
+      <div class="field" id="editTimeSlotsContainer"></div>
+      <div style="display:flex;gap:10px;">
+        <button class="btn btn-primary" data-action="submit-reschedule" data-id="${r.id}">Değişikliği Kaydet</button>
+        <button class="btn btn-outline" style="color:var(--ink);border-color:var(--line);" data-action="cancel-edit-booking">Vazgeç</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderEditTimeSlots(){
+  const container = document.getElementById('editTimeSlotsContainer');
+  if(!container) return;
+  const ef = state.editForm;
+  let html = `<label>Yeni Saat</label>`;
+  if(!ef.date){
+    html += `<p class="empty-note">Saatleri görmek için önce tarih seç.</p>`;
+  } else if(ef.loading || ef.freeTimes===null){
+    html += `<p class="empty-note">Saatler yükleniyor…</p>`;
+  } else {
+    const wk = weekdayKeyFromDate(ef.date);
+    const allTimes = state.availability[wk] || [];
+    if(allTimes.length===0){
+      html += `<p class="empty-note">${DAY_LABELS[wk]} günleri ders verilmiyor. Lütfen başka bir tarih seç.</p>`;
+    } else if(ef.freeTimes.length===0){
+      html += `<p class="empty-note">${DAY_LABELS[wk]} günü için tüm saatler dolu. Lütfen başka bir tarih seç.</p>`;
+    } else {
+      html += `<div class="slot-grid">` + ef.freeTimes.map(t=>`
+        <button type="button" class="slot-btn ${ef.time===t?'selected':''}" data-action="pick-edit-time" data-time="${t}">${t}</button>
+      `).join("") + `</div>`;
+    }
+  }
+  container.innerHTML = html;
 }
 
 /* ============================= RENDER: ADMIN LOGIN ============================= */
@@ -1074,6 +1140,53 @@ async function handleClick(e){
       return;
     }
     state.lookupResults = (state.lookupResults||[]).map(r=> r.id===id ? {...r, status:'iptal'} : r);
+    render();
+    return;
+  }
+  if(action==='start-edit-booking'){
+    const r = (state.lookupResults||[]).find(x=>x.id===el.dataset.id);
+    state.editingBookingId = el.dataset.id;
+    state.editForm = { date: r ? r.date : "", time:null, freeTimes:null, loading:true };
+    render();
+    if(r){
+      state.editForm.freeTimes = await loadFreeTimesForDateExcluding(r.date, r.id);
+      state.editForm.loading = false;
+      renderEditTimeSlots();
+    }
+    return;
+  }
+  if(action==='cancel-edit-booking'){
+    state.editingBookingId = null;
+    render();
+    return;
+  }
+  if(action==='pick-edit-time'){
+    state.editForm.time = el.dataset.time;
+    renderEditTimeSlots();
+    document.querySelectorAll('#editTimeSlotsContainer .slot-btn').forEach(b=>b.classList.toggle('selected', b.dataset.time===state.editForm.time));
+    return;
+  }
+  if(action==='submit-reschedule'){
+    const id = el.dataset.id;
+    const ef = state.editForm;
+    const msgEl = document.getElementById('editMsg');
+    if(!ef.date || !ef.time){
+      if(msgEl) msgEl.innerHTML = '<div class="msg err">Lütfen yeni tarih ve saat seç.</div>';
+      return;
+    }
+    const norm = toStoragePhone(state.lookupPhone);
+    const { data, error } = await sb.rpc('reschedule_booking', { p_id: id, p_phone: norm, p_new_date: ef.date, p_new_time: ef.time });
+    if(error){
+      let text = "Değişiklik yapılamadı, lütfen tekrar dene.";
+      if(error.message && error.message.includes('TOO_LATE')) text = "Derse 2 günden az kaldığı için bu randevuda artık değişiklik yapılamaz.";
+      else if(error.message && error.message.includes('SLOT_TAKEN')) text = "Bu saat başka biri tarafından alınmış. Lütfen başka bir saat seç.";
+      else if(error.message && error.message.includes('NOT_FOUND')) text = "Randevu bulunamadı ya da telefon numarası eşleşmiyor.";
+      if(msgEl) msgEl.innerHTML = `<div class="msg err">${text}</div>`;
+      else console.error(error);
+      return;
+    }
+    state.lookupResults = (state.lookupResults||[]).map(r=> r.id===id ? {...r, date: ef.date, time_slot: ef.time, status:'beklemede'} : r);
+    state.editingBookingId = null;
     render();
     return;
   }
@@ -1393,6 +1506,21 @@ document.addEventListener('change', async (e)=>{
     }
     state.booking.slotsLoading = false;
     renderTimeSlots();
+  }
+  if(e.target && e.target.id==='editBookingDate'){
+    const dateVal = e.target.value;
+    state.editForm.date = dateVal;
+    state.editForm.time = null;
+    state.editForm.freeTimes = null;
+    state.editForm.loading = true;
+    renderEditTimeSlots();
+    if(dateVal){
+      state.editForm.freeTimes = await loadFreeTimesForDateExcluding(dateVal, state.editingBookingId);
+    } else {
+      state.editForm.freeTimes = [];
+    }
+    state.editForm.loading = false;
+    renderEditTimeSlots();
   }
   if(e.target && e.target.id==='adminPhotoInput' && e.target.files && e.target.files[0]){
     const reader = new FileReader();
