@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Matematik & Geometri Özel Ders</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js"></script>
 <style>
   :root{
     --ink:#12233D;
@@ -243,6 +244,25 @@
   .avail-cell{width:26px;height:26px;border:1.5px solid var(--line);margin:0 auto;border-radius:2px;}
   .avail-cell.on{background:var(--green);border-color:var(--green);}
   .avail-scroll{overflow-x:auto;padding-bottom:6px;}
+  .weekcal-nav{display:flex;align-items:center;gap:14px;margin:8px 0 4px;flex-wrap:wrap;}
+  .weekcal-nav .wk-label{font-weight:600;font-size:14.5px;color:var(--ink);}
+  .weekcal-legend{display:flex;gap:16px;flex-wrap:wrap;font-size:12.5px;color:var(--text-soft);margin:10px 0 4px;}
+  .weekcal-legend span{display:inline-flex;align-items:center;gap:6px;}
+  .weekcal-legend i{width:13px;height:13px;border-radius:2px;display:inline-block;border:1.5px solid var(--line);}
+  .weekcal-legend i.lg-off{background:#DCD6C6;border-color:#DCD6C6;}
+  .weekcal-legend i.lg-free{background:#fff;}
+  .weekcal-legend i.lg-pending{background:var(--amber-bg);border-color:var(--accent-bg);}
+  .weekcal-legend i.lg-confirmed{background:var(--green);border-color:var(--green);}
+  .weekcal-grid{display:grid;grid-template-columns:70px repeat(7,1fr);gap:3px;font-size:11.5px;margin-top:10px;min-width:720px;}
+  .weekcal-grid .wc-head{font-weight:600;text-align:center;color:var(--text-soft);padding:4px 2px;}
+  .weekcal-grid .wc-head .d{color:var(--ink);font-size:12.5px;}
+  .weekcal-grid .wc-time{font-weight:600;color:var(--text-soft);align-self:center;}
+  .wc-cell{min-height:30px;border-radius:2px;border:1.5px solid var(--line);background:#fff;display:flex;align-items:center;justify-content:center;text-align:center;line-height:1.15;padding:2px;}
+  .wc-cell.wc-off{background:#DCD6C6;border-color:#DCD6C6;}
+  .wc-cell.wc-pending{background:var(--amber-bg);border-color:var(--accent-bg);color:var(--accent);font-weight:600;}
+  .wc-cell.wc-confirmed{background:var(--green);border-color:var(--green);color:#fff;font-weight:600;}
+  .wc-cell .rc{font-size:10px;}
+  .recur-badge{display:inline-block;font-size:11px;padding:2px 7px;border-radius:10px;background:var(--green-bg);color:var(--green);font-weight:600;margin-left:6px;}
   .login-box{max-width:380px;margin:70px auto;background:#fff;border:1px solid var(--line);padding:34px;}
   .small-note{font-size:12.5px;color:var(--text-soft);margin-top:14px;}
   .catadmin-item{border:1px solid var(--line);padding:14px 16px;margin-bottom:10px;display:flex;justify-content:space-between;gap:14px;align-items:flex-start;flex-wrap:wrap;}
@@ -293,6 +313,38 @@ const SUPABASE_ANON_KEY = "sb_publishable_bhlJUo48oAjh4b9175VYnw_6hGbBmSx";
 const supabaseConfigured = SUPABASE_URL.startsWith('https://') && SUPABASE_URL.includes('supabase.co') && SUPABASE_ANON_KEY.length > 20;
 const sb = supabaseConfigured ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 
+/* ============================= E-POSTA BİLDİRİMİ (EmailJS) ============================= */
+/* Yeni randevu talebi geldiğinde hocaya otomatik e-posta göndermek için
+   ücretsiz bir EmailJS hesabı (www.emailjs.com) açıp aşağıdaki 3 değeri
+   kendi bilgilerinle değiştir. Boş bıraklırsan e-posta gönderimi sessizce
+   atlanır, site yine normal çalışır. Kurulum adımları sohbette anlatıldı. */
+const EMAILJS_PUBLIC_KEY  = "M1fItsALup3jG82_j";   // Account > General > Public Key
+const EMAILJS_SERVICE_ID  = "service_4zlllyo";   // Email Services > Service ID
+const EMAILJS_TEMPLATE_ID = "template_dk7vdjq";   // Email Templates > Template ID
+const ADMIN_NOTIFY_EMAIL  = "gokhanhoca77@gmail.com";
+
+const emailjsConfigured = !!(EMAILJS_PUBLIC_KEY && EMAILJS_SERVICE_ID && EMAILJS_TEMPLATE_ID && window.emailjs);
+if(emailjsConfigured){ window.emailjs.init(EMAILJS_PUBLIC_KEY); }
+
+async function notifyAdminNewBooking(b, catName){
+  if(!emailjsConfigured) return;
+  try{
+    await window.emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
+      to_email: ADMIN_NOTIFY_EMAIL,
+      category: catName || "—",
+      date: formatDateTR(b.date),
+      time: b.time,
+      role: b.role === 'veli' ? 'Veli' : 'Öğrenci',
+      student_name: b.name,
+      grade: b.grade || "—",
+      phone: b.phone,
+      note: b.note || "—"
+    });
+  }catch(e){
+    console.error("Bildirim e-postası gönderilemedi:", e);
+  }
+}
+
 /* ============================= STATE ============================= */
 const DAY_KEYS = ["pazartesi","sali","carsamba","persembe","cuma","cumartesi","pazar"];
 const DAY_LABELS = {pazartesi:"Pazartesi",sali:"Salı",carsamba:"Çarşamba",persembe:"Perşembe",cuma:"Cuma",cumartesi:"Cumartesi",pazar:"Pazar"};
@@ -337,6 +389,7 @@ let state = {
   loginAttempts:0,
   lockUntil:0,
   adminTab:"bookings",
+  adminAvailWeekStart: mondayOfWeekISO(new Date().toISOString().slice(0,10)),
   booking:{ categoryId:null, date:"", time:null, role:"ogrenci", name:"", grade:"", phone:"", note:"", freeTimes:null, slotsLoading:false },
   lookupPhone:"",
   lookupResults:null,
@@ -411,6 +464,23 @@ function formatDateTR(dateStr){
 }
 function todayISO(){ return new Date().toISOString().slice(0,10); }
 function maxDateISO(){ const d = new Date(); d.setDate(d.getDate()+60); return d.toISOString().slice(0,10); }
+function addDaysISO(dateStr, n){ const d = new Date(dateStr+"T00:00:00"); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); }
+function mondayOfWeekISO(dateStr){
+  const d = new Date(dateStr+"T00:00:00");
+  const dow = d.getDay(); // 0=Sun..6=Sat
+  const diffToMonday = dow===0 ? -6 : 1-dow;
+  d.setDate(d.getDate()+diffToMonday);
+  return d.toISOString().slice(0,10);
+}
+function formatDayShortTR(dateStr){
+  const d = new Date(dateStr+"T00:00:00");
+  return d.toLocaleDateString("tr-TR",{day:"2-digit",month:"2-digit"});
+}
+function daysUntil(dateStr){
+  const today = new Date(todayISO()+"T00:00:00");
+  const target = new Date(dateStr+"T00:00:00");
+  return Math.round((target-today)/86400000);
+}
 function catById(id){ return (state.categories||[]).find(c=>c.id===id); }
 function escapeHtml(s){
   return String(s||"").replace(/[&<>"']/g, m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));
@@ -674,13 +744,19 @@ function renderLookup(){
     } else {
       resultsHtml = results.map(r=>{
         const cat = catById(r.category_id);
+        const canCancel = r.status!=='iptal' && daysUntil(r.date) >= 2;
+        const tooLate = r.status!=='iptal' && daysUntil(r.date) < 2;
         return `
         <div class="booking-row">
           <div>
             <strong>${cat?escapeHtml(cat.name):"Ders"}</strong>
             <div class="meta">${formatDateTR(r.date)} · ${r.time_slot} · ${escapeHtml(r.name)}</div>
+            ${tooLate?'<div class="meta" style="color:var(--red);margin-top:4px;">Derse 2 günden az kaldığı için artık iptal edilemez.</div>':''}
           </div>
-          <span class="status-pill status-${r.status}">${r.status==='beklemede'?'Beklemede':r.status==='onaylandı'?'Onaylandı':'İptal Edildi'}</span>
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px;">
+            <span class="status-pill status-${r.status}">${r.status==='beklemede'?'Beklemede':r.status==='onaylandı'?'Onaylandı':'İptal Edildi'}</span>
+            ${canCancel?`<button class="icon-btn cancel" data-action="cancel-own-booking" data-id="${r.id}">Randevuyu İptal Et</button>`:''}
+          </div>
         </div>`;
       }).join("");
     }
@@ -762,13 +838,15 @@ function renderAdminBookings(){
       <tr>
         <td>${formatDateTR(b.date)}<br><span style="color:var(--text-soft);">${b.time_slot}</span></td>
         <td>${cat?escapeHtml(cat.name):"—"}</td>
-        <td>${escapeHtml(b.name)}<br><span style="color:var(--text-soft);">${b.role==='veli'?'Veli':'Öğrenci'} · ${escapeHtml(b.grade||"-")}. Sınıf</span></td>
+        <td>${escapeHtml(b.name)}${b.is_recurring?'<span class="recur-badge">♻ Haftalık</span>':''}<br><span style="color:var(--text-soft);">${b.role==='veli'?'Veli':'Öğrenci'} · ${escapeHtml(b.grade||"-")}. Sınıf</span></td>
         <td>${escapeHtml(b.phone)}</td>
         <td style="max-width:180px;color:var(--text-soft);">${escapeHtml(b.note||"—")}</td>
         <td><span class="status-pill status-${b.status}">${b.status==='beklemede'?'Beklemede':b.status==='onaylandı'?'Onaylandı':'İptal'}</span></td>
         <td>
           ${b.status!=='onaylandı'?`<button class="icon-btn confirm" data-action="booking-status" data-id="${b.id}" data-status="onaylandı">Onayla</button>`:""}
           ${b.status!=='iptal'?`<button class="icon-btn cancel" data-action="booking-status" data-id="${b.id}" data-status="iptal">İptal</button>`:""}
+          ${b.status==='onaylandı' && !b.is_recurring?`<button class="icon-btn" data-action="make-recurring" data-id="${b.id}">Haftalık Tekrarla</button>`:""}
+          ${b.is_recurring?`<button class="icon-btn cancel" data-action="stop-recurring" data-groupid="${b.recurring_group_id}" data-id="${b.id}">Tekrarı Durdur</button>`:""}
           <button class="icon-btn" data-action="booking-delete" data-id="${b.id}">Sil</button>
         </td>
       </tr>
@@ -777,6 +855,7 @@ function renderAdminBookings(){
 
   return `
     <div class="admin-header"><h2>Randevular</h2></div>
+    <p style="color:var(--text-soft);font-size:13.5px;margin-top:-14px;">"Haftalık Tekrarla": onaylanmış bir randevuyu, aynı gün/saatte önümüzdeki haftalara otomatik olarak ayırır (o saatler başka öğrenciye kapanır).</p>
     ${bookings.length===0 ? '<p class="empty-note">Henüz randevu talebi yok.</p>' : `
     <div style="overflow-x:auto;">
     <table class="admin-table">
@@ -797,10 +876,61 @@ function renderAdminAvailability(){
       grid += `<button type="button" class="avail-cell ${on?'on':''}" data-action="toggle-avail" data-day="${dk}" data-time="${t}"></button>`;
     });
   });
+
+  /* ---- haftalık randevu takvimi (onaylanan/bekleyen randevulara göre) ---- */
+  const weekStart = state.adminAvailWeekStart;
+  const weekDates = Array.from({length:7}, (_,i)=>addDaysISO(weekStart,i));
+  const weekEnd = weekDates[6];
+  const bookingsThisWeek = (state.bookings||[]).filter(b=> b.date>=weekStart && b.date<=weekEnd && b.status!=='iptal');
+
+  let weekGrid = `<div class="wc-head"></div>` + weekDates.map((d,i)=>{
+    const dk = DAY_KEYS[i];
+    return `<div class="wc-head">${DAY_LABELS[dk]}<br><span class="d">${formatDayShortTR(d)}</span></div>`;
+  }).join("");
+
+  TIME_OPTIONS.forEach(t=>{
+    weekGrid += `<div class="wc-time">${t}</div>`;
+    weekDates.forEach((d,i)=>{
+      const dk = DAY_KEYS[i];
+      const offered = (avail[dk]||[]).includes(t);
+      const match = bookingsThisWeek.find(b=> b.date===d && b.time_slot===t);
+      let cls = 'wc-cell', label = '';
+      if(match){
+        cls += match.status==='onaylandı' ? ' wc-confirmed' : ' wc-pending';
+        label = (match.name||'').split(' ')[0] || (match.status==='onaylandı'?'Onaylı':'Bekliyor');
+        if(match.is_recurring) label += ' <span class="rc">♻</span>';
+      } else if(!offered){
+        cls += ' wc-off';
+      }
+      weekGrid += `<div class="${cls}" title="${match?escapeHtml(match.name)+' — '+(match.status==='onaylandı'?'Onaylandı':'Beklemede'):(offered?'Boş':'Müsait değil')}">${label}</div>`;
+    });
+  });
+
+  const weekLabel = `${formatDayShortTR(weekStart)} – ${formatDayShortTR(weekEnd)}`;
+
   return `
     <div class="admin-header"><h2>Müsaitlik Ayarları</h2></div>
-    <p style="color:var(--text-soft);font-size:14px;">Ders verilebilecek gün ve saatleri işaretle. Öğrenciler randevu alırken sadece burada açık olan saatleri görür.</p>
+    <p style="color:var(--text-soft);font-size:14px;">Ders verilebilecek gün ve saatleri işaretle. Öğrenciler randevu alırken sadece burada açık olan saatleri görür. Bu, her hafta tekrar eden genel kuraldır.</p>
     <div class="avail-scroll"><div class="avail-grid">${grid}</div></div>
+
+    <hr class="rule" style="margin:32px 0 20px;">
+
+    <h3 style="font-size:17px;margin-bottom:6px;">Haftalık Randevu Takvimi</h3>
+    <p style="color:var(--text-soft);font-size:14px;">Bu, seçtiğin haftadaki gerçek randevuları gösterir — onaylanan ve bekleyen randevular işaretli görünür. Sonraki haftalar, o haftaya ait randevu yoksa boş görünür.</p>
+    <div class="weekcal-nav">
+      <button class="icon-btn" data-action="avail-week-prev">‹ Önceki Hafta</button>
+      <span class="wk-label">${weekLabel}</span>
+      <button class="icon-btn" data-action="avail-week-next">Sonraki Hafta ›</button>
+      <button class="icon-btn" data-action="avail-week-today">Bu Hafta</button>
+    </div>
+    <div class="weekcal-legend">
+      <span><i class="lg-off"></i> Müsait değil</span>
+      <span><i class="lg-free"></i> Boş</span>
+      <span><i class="lg-pending"></i> Beklemede</span>
+      <span><i class="lg-confirmed"></i> Onaylandı</span>
+      <span>♻ Haftalık tekrar eden randevu</span>
+    </div>
+    <div class="avail-scroll"><div class="weekcal-grid">${weekGrid}</div></div>
   `;
 }
 
@@ -927,6 +1057,26 @@ async function handleClick(e){
     render();
     return;
   }
+  if(action==='cancel-own-booking'){
+    if(!confirm("Bu randevuyu iptal etmek istediğine emin misin?")) return;
+    const id = el.dataset.id;
+    const norm = toStoragePhone(state.lookupPhone);
+    const { error } = await sb.rpc('cancel_booking', { p_id: id, p_phone: norm });
+    if(error){
+      if(error.message && error.message.includes('TOO_LATE')){
+        alert("Derse 2 günden az kaldığı için bu randevu artık iptal edilemez.");
+      } else if(error.message && error.message.includes('NOT_FOUND')){
+        alert("Randevu bulunamadı ya da telefon numarası eşleşmiyor.");
+      } else {
+        console.error(error);
+        alert("İptal işlemi başarısız oldu, lütfen tekrar dene.");
+      }
+      return;
+    }
+    state.lookupResults = (state.lookupResults||[]).map(r=> r.id===id ? {...r, status:'iptal'} : r);
+    render();
+    return;
+  }
 
   /* admin login/logout */
   if(action==='do-admin-login'){
@@ -967,7 +1117,24 @@ async function handleClick(e){
   }
   if(action==='admin-tab'){
     state.adminTab = el.dataset.tab;
-    if(state.adminTab==='bookings') await refreshBookings();
+    if(state.adminTab==='bookings' || state.adminTab==='availability') await refreshBookings();
+    render();
+    return;
+  }
+
+  /* haftalık randevu takvimi gezinme */
+  if(action==='avail-week-prev'){
+    state.adminAvailWeekStart = addDaysISO(state.adminAvailWeekStart, -7);
+    render();
+    return;
+  }
+  if(action==='avail-week-next'){
+    state.adminAvailWeekStart = addDaysISO(state.adminAvailWeekStart, 7);
+    render();
+    return;
+  }
+  if(action==='avail-week-today'){
+    state.adminAvailWeekStart = mondayOfWeekISO(todayISO());
     render();
     return;
   }
@@ -989,6 +1156,14 @@ async function handleClick(e){
       state.bookings = state.bookings.filter(b=>b.id!==id);
     } else { console.error(error); }
     render();
+    return;
+  }
+  if(action==='make-recurring'){
+    await makeRecurring(el.dataset.id);
+    return;
+  }
+  if(action==='stop-recurring'){
+    await stopRecurring(el.dataset.groupid, el.dataset.id);
     return;
   }
 
@@ -1052,6 +1227,60 @@ async function handleClick(e){
   }
 }
 
+async function makeRecurring(bookingId){
+  const original = state.bookings.find(b=>b.id===bookingId);
+  if(!original) return;
+  const weeksInput = window.prompt("Bu randevu kaç hafta boyunca aynı gün/saatte otomatik tekrarlansın?", "12");
+  if(weeksInput===null) return;
+  const weeks = Math.max(1, Math.min(52, parseInt(weeksInput,10)||0));
+  if(!weeks) return;
+
+  const groupId = original.recurring_group_id || (crypto.randomUUID ? crypto.randomUUID() : uid()+uid());
+  const existing = state.bookings.filter(b=>b.status!=='iptal');
+  const toInsert = [];
+  const skipped = [];
+
+  for(let i=1;i<=weeks;i++){
+    const newDate = addDaysISO(original.date, 7*i);
+    const conflict = existing.some(b=>b.date===newDate && b.time_slot===original.time_slot) || toInsert.some(b=>b.date===newDate && b.time_slot===original.time_slot);
+    if(conflict){ skipped.push(newDate); continue; }
+    toInsert.push({
+      category_id: original.category_id, date: newDate, time_slot: original.time_slot,
+      role: original.role, name: original.name, grade: original.grade, phone: original.phone,
+      note: original.note, status: 'onaylandı', is_recurring: true, recurring_group_id: groupId
+    });
+  }
+
+  if(toInsert.length>0){
+    const { error: insErr } = await sb.from('bookings').insert(toInsert);
+    if(insErr){ console.error(insErr); alert("Tekrarlayan randevular oluşturulurken hata oldu."); return; }
+  }
+  const { error: updErr } = await sb.from('bookings').update({ is_recurring:true, recurring_group_id: groupId }).eq('id', bookingId);
+  if(updErr) console.error(updErr);
+
+  await refreshBookings();
+  render();
+  let msg = `${toInsert.length} hafta için randevu ayrıldı.`;
+  if(skipped.length>0) msg += `\n${skipped.length} hafta zaten dolu olduğu için atlandı: ` + skipped.map(formatDayShortTR).join(", ");
+  alert(msg);
+}
+
+async function stopRecurring(groupId, currentId){
+  if(!confirm("Bu haftalık tekrarı durdurmak istiyor musun? Bugünden sonraki, henüz gerçekleşmemiş tüm tekrar randevuları silinecek.")) return;
+  const today = todayISO();
+  if(groupId){
+    const { error } = await sb.from('bookings').delete().eq('recurring_group_id', groupId).gt('date', today);
+    if(error) console.error(error);
+    const { error: updErr } = await sb.from('bookings').update({ is_recurring:false }).eq('recurring_group_id', groupId).lte('date', today);
+    if(updErr) console.error(updErr);
+  } else {
+    const { error } = await sb.from('bookings').update({ is_recurring:false }).eq('id', currentId);
+    if(error) console.error(error);
+  }
+  await refreshBookings();
+  render();
+}
+
 async function submitBooking(){
   const b = state.booking;
   b.role = document.querySelector('input[name="roleRadio"]:checked').value;
@@ -1093,6 +1322,10 @@ async function submitBooking(){
     }
     return;
   }
+
+  const catNameForMail = catById(b.categoryId)?.name;
+  const bookingForMail = { date:b.date, time:b.time, role:b.role, name:b.name, grade:b.grade, phone:storagePhone, note:b.note };
+  notifyAdminNewBooking(bookingForMail, catNameForMail);
 
   state.booking = { categoryId:null, date:"", time:null, role:"ogrenci", name:"", grade:"", phone:"", note:"", freeTimes:null, slotsLoading:false };
   render();
