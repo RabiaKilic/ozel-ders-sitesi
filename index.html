@@ -287,11 +287,11 @@
 /* ============================= SUPABASE AYARLARI ============================= */
 /* Bu iki değeri kendi Supabase projenin bilgileriyle değiştir:
    Project Settings > API içinde "Project URL" ve "anon public" key bulunur. */
-const SUPABASE_URL = "https://tsfyegbogvkaaxsrcibp.supabase.co";
+const SUPABASE_URL = "https://tsfyegbogvkaaxsrcibp.sb.co";
 const SUPABASE_ANON_KEY = "sb_publishable_bhlJUo48oAjh4b9175VYnw_6hGbBmSx";
 
-const supabaseConfigured = SUPABASE_URL.startsWith('https://') && SUPABASE_URL.includes('supabase.co') && SUPABASE_ANON_KEY.length > 20;
-const supabase = supabaseConfigured ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
+const supabaseConfigured = SUPABASE_URL.startsWith('https://') && SUPABASE_URL.includes('sb.co') && SUPABASE_ANON_KEY.length > 20;
+const sb = supabaseConfigured ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 
 /* ============================= STATE ============================= */
 const DAY_KEYS = ["pazartesi","sali","carsamba","persembe","cuma","cumartesi","pazar"];
@@ -348,9 +348,9 @@ let state = {
 async function loadAll(){
   try{
     const [catRes, availRes, tinfoRes] = await Promise.all([
-      supabase.from('categories').select('*').order('id'),
-      supabase.from('availability').select('*'),
-      supabase.from('tutor_info').select('*').eq('id',1).single()
+      sb.from('categories').select('*').order('id'),
+      sb.from('availability').select('*'),
+      sb.from('tutor_info').select('*').eq('id',1).single()
     ]);
     if(catRes.error) throw catRes.error;
     if(availRes.error) throw availRes.error;
@@ -362,7 +362,7 @@ async function loadAll(){
     state.availability = availObj;
     state.tutorInfo = tinfoRes.data || DEFAULT_TUTOR_INFO;
 
-    const { data: sessionData } = await supabase.auth.getSession();
+    const { data: sessionData } = await sb.auth.getSession();
     if(sessionData && sessionData.session){
       state.isAdmin = true;
       state.adminEmail = sessionData.session.user.email;
@@ -376,14 +376,14 @@ async function loadAll(){
 }
 async function refreshBookings(){
   try{
-    const { data, error } = await supabase.from('bookings').select('*').order('date').order('time_slot');
+    const { data, error } = await sb.from('bookings').select('*').order('date').order('time_slot');
     if(error) throw error;
     state.bookings = data || [];
   }catch(e){ console.error("Randevular yüklenemedi:", e); state.bookings = state.bookings || []; }
 }
 async function fetchBookedTimesForDate(date){
   try{
-    const { data, error } = await supabase.rpc('get_booked_times', { p_date: date });
+    const { data, error } = await sb.rpc('get_booked_times', { p_date: date });
     if(error) throw error;
     return (data||[]).map(r=>r.time_slot);
   }catch(e){ console.error("Saatler alınamadı:", e); return []; }
@@ -917,7 +917,7 @@ async function handleClick(e){
     state.lookupPhone = phone;
     const norm = toStoragePhone(phone);
     try{
-      const { data, error } = await supabase.rpc('lookup_bookings_by_phone', { p_phone: norm });
+      const { data, error } = await sb.rpc('lookup_bookings_by_phone', { p_phone: norm });
       if(error) throw error;
       state.lookupResults = (data||[]).sort((a,b)=>(a.date+a.time_slot).localeCompare(b.date+b.time_slot));
     }catch(err){
@@ -938,7 +938,7 @@ async function handleClick(e){
     }
     const email = document.getElementById('adminEmailInput').value.trim();
     const pass = document.getElementById('adminPasswordInput').value;
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password: pass });
+    const { data, error } = await sb.auth.signInWithPassword({ email, password: pass });
     if(!error && data && data.user){
       state.isAdmin = true;
       state.adminEmail = data.user.email;
@@ -958,7 +958,7 @@ async function handleClick(e){
     return;
   }
   if(action==='admin-logout'){
-    await supabase.auth.signOut();
+    await sb.auth.signOut();
     state.isAdmin = false;
     state.adminEmail = null;
     state.view = 'home';
@@ -975,7 +975,7 @@ async function handleClick(e){
   /* admin bookings */
   if(action==='booking-status'){
     const id = el.dataset.id, status = el.dataset.status;
-    const { error } = await supabase.from('bookings').update({ status }).eq('id', id);
+    const { error } = await sb.from('bookings').update({ status }).eq('id', id);
     if(!error){
       state.bookings = state.bookings.map(b=> b.id===id ? {...b, status} : b);
     } else { console.error(error); }
@@ -984,7 +984,7 @@ async function handleClick(e){
   }
   if(action==='booking-delete'){
     const id = el.dataset.id;
-    const { error } = await supabase.from('bookings').delete().eq('id', id);
+    const { error } = await sb.from('bookings').delete().eq('id', id);
     if(!error){
       state.bookings = state.bookings.filter(b=>b.id!==id);
     } else { console.error(error); }
@@ -999,7 +999,7 @@ async function handleClick(e){
     const newList = list.includes(time) ? list.filter(t=>t!==time) : [...list, time].sort();
     state.availability[day] = newList;
     render();
-    const { error } = await supabase.from('availability').upsert({ day, times: newList });
+    const { error } = await sb.from('availability').upsert({ day, times: newList });
     if(error) console.error(error);
     return;
   }
@@ -1011,16 +1011,16 @@ async function handleClick(e){
     const desc = document.getElementById('newCatDesc').value.trim();
     const msgEl = document.getElementById('catMsg');
     if(!name){ return; }
-    const { error } = await supabase.from('categories').insert({ id: uid(), name, levels: levels||"—", description: desc||"" });
+    const { error } = await sb.from('categories').insert({ id: uid(), name, levels: levels||"—", description: desc||"" });
     if(error){ msgEl.innerHTML = '<div class="msg err">Kategori eklenemedi.</div>'; console.error(error); return; }
-    const { data } = await supabase.from('categories').select('*').order('id');
+    const { data } = await sb.from('categories').select('*').order('id');
     state.categories = data || [];
     render();
     return;
   }
   if(action==='cat-delete'){
     const id = el.dataset.id;
-    const { error } = await supabase.from('categories').delete().eq('id', id);
+    const { error } = await sb.from('categories').delete().eq('id', id);
     if(!error){ state.categories = state.categories.filter(c=>c.id!==id); }
     else console.error(error);
     render();
@@ -1040,7 +1040,7 @@ async function handleClick(e){
     const msgEl = document.getElementById('securityMsg');
     if(p1.length < 6){ msgEl.innerHTML = '<div class="msg err">Şifre en az 6 karakter olmalı.</div>'; return; }
     if(p1 !== p2){ msgEl.innerHTML = '<div class="msg err">Şifreler eşleşmiyor.</div>'; return; }
-    const { error } = await supabase.auth.updateUser({ password: p1 });
+    const { error } = await sb.auth.updateUser({ password: p1 });
     if(!error){
       msgEl.innerHTML = '<div class="msg ok">Şifre güncellendi.</div>';
       document.getElementById('newAdminPassword').value = '';
@@ -1070,7 +1070,7 @@ async function submitBooking(){
   if(!isValidTRPhone(b.phone)){ msgEl.innerHTML = '<div class="msg err">Telefon numarasını 05xx xxx xx xx formatında gir.</div>'; return; }
 
   const storagePhone = toStoragePhone(b.phone);
-  const { data, error } = await supabase.rpc('create_booking', {
+  const { data, error } = await sb.rpc('create_booking', {
     p_category_id: b.categoryId,
     p_date: b.date,
     p_time: b.time,
@@ -1128,7 +1128,7 @@ async function saveProfile(){
     if(dataUrl) t.photo = dataUrl;
   }
 
-  const { error } = await supabase.from('tutor_info').update({
+  const { error } = await sb.from('tutor_info').update({
     name: t.name, title: t.title, bio: t.bio, experience: t.experience,
     students: t.students, phone: t.phone, achievements: t.achievements, photo: t.photo
   }).eq('id', 1);
