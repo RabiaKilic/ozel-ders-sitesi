@@ -287,10 +287,10 @@
 /* ============================= SUPABASE AYARLARI ============================= */
 /* Bu iki değeri kendi Supabase projenin bilgileriyle değiştir:
    Project Settings > API içinde "Project URL" ve "anon public" key bulunur. */
-const SUPABASE_URL = "https://tsfyegbogvkaaxsrcibp.sb.co";
+const SUPABASE_URL = "https://tsfyegbogvkaaxsrcibp.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_bhlJUo48oAjh4b9175VYnw_6hGbBmSx";
 
-const supabaseConfigured = SUPABASE_URL.startsWith('https://') && SUPABASE_URL.includes('sb.co') && SUPABASE_ANON_KEY.length > 20;
+const supabaseConfigured = SUPABASE_URL.startsWith('https://') && SUPABASE_URL.includes('supabase.co') && SUPABASE_ANON_KEY.length > 20;
 const sb = supabaseConfigured ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 
 /* ============================= STATE ============================= */
